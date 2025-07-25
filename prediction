@@ -1,0 +1,101 @@
+import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import accuracy_score, classification_report
+from imblearn.over_sampling import SMOTE
+
+# Loading the CSV data to pandas DataFrame
+heart_data = pd.read_csv('/content/heart_data.csv')
+
+# Handle missing values:
+missing_cols = heart_data.columns[heart_data.isnull().any()].tolist()
+for col in missing_cols:
+    if heart_data[col].dtype == 'object':
+        heart_data[col] = heart_data[col].fillna(heart_data[col].mode()[0])
+        heart_data[col] = heart_data[col].infer_objects(copy=False)
+    else:
+        heart_data[col] = heart_data[col].fillna(heart_data[col].mean())
+
+# One-hot encode categorical columns
+categorical_cols = ['sex', 'dataset', 'cp', 'fbs', 'restecg', 'exang', 'slope', 'thal']
+heart_data = pd.get_dummies(heart_data, columns=categorical_cols, drop_first=True)
+
+# Define X and Y
+X = heart_data.drop(columns='num', axis=1)
+Y = heart_data['num']
+
+# Split the data
+X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, stratify=Y, random_state=2)
+
+# Scale the data
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+# Apply SMOTE to balance the classes
+smote = SMOTE(random_state=42)
+X_train_resampled, Y_train_resampled = smote.fit_resample(X_train_scaled, Y_train)
+
+# Train the Logistic Regression model with class weights
+model = LogisticRegression(max_iter=10000, class_weight='balanced')
+model.fit(X_train_resampled, Y_train_resampled)
+
+# Evaluate the model and print accuracy
+y_pred = model.predict(X_test_scaled)
+accuracy = accuracy_score(Y_test, y_pred)
+print(f"Accuracy: {accuracy:.4f}")
+print("Classification Report:")
+print(classification_report(Y_test, y_pred))
+
+# Function for prediction
+def predict_heart_disease(input_data, x_train_columns, scaler, model):
+    # Preprocess the input data
+    for col in heart_data.columns:
+        if input_data[col].isnull().any():
+            if input_data[col].dtype == 'object':
+                input_data[col] = input_data[col].fillna(heart_data[col].mode()[0])
+            else:
+                input_data[col] = input_data[col].fillna(heart_data[col].mean())
+
+    categorical_cols = ['sex', 'dataset', 'cp', 'fbs', 'restecg', 'exang', 'slope', 'thal']
+    input_data = pd.get_dummies(input_data, columns=categorical_cols, drop_first=True)
+
+    # Align input_data columns with X_train columns
+    input_data = input_data.reindex(columns=x_train_columns, fill_value=0)
+
+    # Scale the input data
+    input_data_scaled = scaler.transform(input_data)
+
+    # Make the prediction
+    prediction = model.predict(input_data_scaled)
+    return prediction[0]
+
+# Prediction on a new data point
+input_data = pd.DataFrame({
+    'age': [54],
+    'sex': ['Female'],
+    'dataset': ['Cleveland'],
+    'cp': ['asymptomatic'],
+    'trestbps': [140],
+    'chol': [239],
+    'fbs': [False],
+    'restecg': ['normal'],
+    'thalch': [160],
+    'exang': [False],
+    'oldpeak': [1.2],
+    'slope': ['upsloping'],
+    'ca': [0],
+    'thal': ['normal']
+})
+
+prediction = predict_heart_disease(input_data, X_train.columns, scaler, model)
+
+# Interpret the prediction
+print("Prediction:", prediction)
+
+if prediction == 0:
+    print("No heart disease detected.")
+else:
+    print("Heart disease detected.")
